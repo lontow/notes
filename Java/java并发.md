@@ -376,3 +376,171 @@ public class ProducerConsumerExample {
 Lock 很像同步代码块中使用的隐式锁。同一时间，只有一个线程持有同一对象上的锁。通过相关联的Condition 对象支持wait/notify机制。
 
 Lock objects的最大优势是，tryLock。既是在锁不能获得时，立即或者超时返回。在获得锁之前，lockInterruptibly 方法在收到另一个线程的中断时，能够放弃。
+
+#### Executors
+
+##### Executor interfaces
+
+* Executor 支持启动任务的接口
+* ExecutorService  Executor的子接口。管理任务和其自身的生命周期
+* ScheduledExecutorService ExecutorService的子接口，支持未来或者周期性执行任务
+
+###### Executor
+
+只用一个简单的 execute()执行函数定义。接受Runnable
+
+###### ExecutorService
+
+支持 execute() 和 submit()。submit() 接受Runnable ,同时接受Callable.Callabel对象支持任务返回值。submit 返回Future对象，Future对象可以提取Callable对象的返回值，并能够管理Callable和Runnable任务。
+
+ExecutorService也支持提交大量的Callable 集合。同时提供管理Executor的方法。为了支持立即关闭，需要任务正确处理interrupt。
+
+###### ScheduledExecutorService
+
+增加 schedule，可以延时执行执行Runnable或者Callable任务。
+
+增加 scheduleAtFixedRate，scheduleWithFixedDelay周期性执行任务
+
+##### Thread Pools
+
+大量Executor的实现使用线程池，线程池中包含工作线程。工作线程独立于Runnable和Callable存在。常常用于执行多任务。使用线程池可以大大减少线程创建的工作量。
+
+一种常用的线程池使固定数目线程池。顾名思义，维护一个固定数量线程的线程池。任务被提交到内部队列，队列里保存多于线程数量的额外任务。
+
+固定数目线程池最大的优点是，限制了系统资源的消耗。
+
+创建固定数量线程池的方式，可以使用 Executors.newFixedThreadPool 工厂模式。同时也提供了：
+
+* newCachedThreadPool 创建表一个可扩展的线程池。
+* newSingleThreadExecutor 创建一个单线程Executor
+* 创建ScheduledExecutorService版本的线程池
+
+同时可以使用ThreadPoolExecutor 或者ScheduledThreadPoolExecutor 自行创建。
+
+##### Fork/Join
+
+实现ExecutorService以提供对多处理器的支持。使用work-stealing算法。运行完的线程可偷取其他繁忙线程的任务。
+
+整个Fork/Join框架的中心是 ForkJoinPool类，是AbstractExecutorService 类的扩展。实现了work-stealing算法，并可以执行ForkJoinTask。
+
+###### 基本用法
+
+将大任务拆成小任务，根据任务的大小，判断是否可以直接运行。伪代码如下:
+
+```
+if (my portion of the work is small enough)
+  do the work directly
+else
+  split my work into two pieces
+  invoke the two pieces and wait for the results
+```
+
+将上述代码封装到ForkJoinTask子类中，如 RecursiveTask(可以返回结果)或者 RecursiveAction。
+
+然后，创建一个代表所有任务的对象，并使用ForkJoinPool.invoke()调用。
+
+###### 图片模糊实例
+
+源图片使用一个Integer数组表示，每个Integer代表一个像素的颜色。目标模糊图像也是这种格式。
+
+实现图片模糊的方法是，对源图片的每一个像素的颜色使用它周围的像素进行平均。由于图片数组可能很大。所以考虑使用fork/join框架。
+
+```java
+public class ForkBlur extends RecursiveAction {
+    private int[] mSource;
+    private int mStart;//每一部分的起始
+    private int mLength;//每一部分的长度
+    private int[] mDestination;
+  
+    // Processing window size; should be odd.
+    private int mBlurWidth = 15;
+  
+    public ForkBlur(int[] src, int start, int length, int[] dst) {
+        mSource = src;
+        mStart = start;
+        mLength = length;
+        mDestination = dst;
+    }
+
+    protected void computeDirectly() {
+        int sidePixels = (mBlurWidth - 1) / 2;
+        for (int index = mStart; index < mStart + mLength; index++) {
+            // Calculate average.
+            float rt = 0, gt = 0, bt = 0;
+            for (int mi = -sidePixels; mi <= sidePixels; mi++) {
+                int mindex = Math.min(Math.max(mi + index, 0),
+                                    mSource.length - 1);
+                int pixel = mSource[mindex];
+                rt += (float)((pixel & 0x00ff0000) >> 16)
+                      / mBlurWidth;
+                gt += (float)((pixel & 0x0000ff00) >>  8)
+                      / mBlurWidth;
+                bt += (float)((pixel & 0x000000ff) >>  0)
+                      / mBlurWidth;
+            }
+          
+            // Reassemble destination pixel.
+            int dpixel = (0xff000000     ) |
+                   (((int)rt) << 16) |
+                   (((int)gt) <<  8) |
+                   (((int)bt) <<  0);
+            mDestination[index] = dpixel;
+        }
+    }
+  
+  ...
+```
+
+实现抽象的compute()方法，该方法要么直接模糊要么分成更小的任务。
+
+```java
+protected static int sThreshold = 100000;//划分成更小任务的界限
+
+protected void compute() {
+    if (mLength < sThreshold) {
+        computeDirectly();
+        return;
+    }
+    
+    int split = mLength / 2;
+    //分成两个更小的任务
+    invokeAll(new ForkBlur(mSource, mStart, split, mDestination),
+              new ForkBlur(mSource, mStart + split, mLength - split,
+                           mDestination));
+}
+```
+
+设置 ForkJoinPool:
+
+```java
+// source image pixels are in src
+// destination image pixels are in dst
+ForkBlur fb = new ForkBlur(src, 0, src.length, dst);
+ForkJoinPool pool = new ForkJoinPool();
+pool.invoke(fb);
+```
+
+###### 使用Fork/Join的标准库
+
+* java.util.Arrays.parallelSort()
+* java.util.streams
+
+#### ConcurrentCollections
+
+1. BlockingQueue 定义一个队列。当向满队列添加或者向空队列取数据。将会block或者timeout
+2. ConcurrentMap 接口额外定义了一些原子操作。
+3. ConcurrentNavigableMap接口。支持模糊匹配。
+
+#### 原子变量
+
+所有的原子变量方法都是原子的。
+
+#### 并发随机数
+
+```java
+int r = ThreadLocalRandom.current() .nextInt(4, 77);
+```
+
+### See Also
+
+java-tutorial https://docs.oracle.com/javase/tutorial/essential/concurrency/threadlocalrandom.html
