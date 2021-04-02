@@ -73,7 +73,7 @@ if(!directBuf.hasArray()){//检测是否基于数组
 
 有这样一个场景：假设一个消息由两部分组成。header 和 body。这两部分由不同的应用程序模块产生。应用程序能够重用 body,并加上自己的header ,以产生新的消息。这时，CompsiteByteBuf 可以避免buffer 不必要的拷贝。
 
-```
+```java
 CompositeByteBuf messageBuf = unPooled.compositeBuffer();
 ByteBuf headerBuf = ...;
 ByteBuf bodyBuf = ...;
@@ -82,10 +82,45 @@ messgeBuf.addComponnets(headerBuf,bodyBuf);
 messageBuf.removeComponet(0);//remove the header
 for(ByteBuf buf:messageBuf){
 	Sytem.out.println(buf.toString());
+    //数据访问
+    int length = comBuf.readableBytes();
+    byte[] array = new byte[length];
+    compBuf.getBytes(compBuf.readerIndex(),array);
+    //handleArray
 }
 ```
 
-访问CompositeByteBuf 中的数据与访问 direct Buffers 相似。
+访问CompositeByteBuf 中的数据与访问 direct Buffers 相似。Netty优化了Socket IO.排除了JDK buffer实现中可能存在的性能和内存损失。
+
+##### 字节级操作
+
+###### 随机读取索引
+
+可以像数组一样存取，不改变readerIndex 和writeIndex
+
+```java
+ByteBuf buffer = ...;
+for (int i = 0; i < buffer.capacity(); i++) {
+byte b = buffer.getByte(i);
+System.out.println((char) b);
+}
+```
+
+###### 顺序存取索引
+
+ByteBuffer 在读和写之间必须调用flip()。下图展示了ByteBuf的内部结构：
+
+![](./imgs/ByteBuf_interval.png)
+
++ 可丢弃字节
+
+可使用discardReadBytes()将会回收上图的Discardable bytes。readerIndex 和WriterIndex都会减小。readerIndex变为零。由于涉及内存拷贝，因而需要少用。
+
++ 可读字节
+
+
+
+
 
 ------
 
