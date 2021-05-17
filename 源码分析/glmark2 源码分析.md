@@ -696,7 +696,7 @@ $glmark2 -b triangle
 
 效果如下：
 
-![image-20210514175330395](C:\Users\liuzl\Desktop\imgs\image-20210514175330395.png)
+![image-20210514175330395](./imgs/image-20210514175330395.png)
 
 ------
 
@@ -734,4 +734,4 @@ void main()
 
 [^3]: 纹理图片
 
-![纹理图片](C:\Users\liuzl\Desktop\imgs\triangle-test.jpg)
+![纹理图片](./imgs/triangle-test.jpg)
